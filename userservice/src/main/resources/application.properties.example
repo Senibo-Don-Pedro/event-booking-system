@@ -1,0 +1,49 @@
+# ====================================
+# Event Booking System - User Service
+# Configuration Template
+# ====================================
+# Copy this file to application.properties and fill in your values
+
+# Application
+spring.application.name=userservice
+server.port=8084
+
+# ====================================
+# Database Configuration
+# ====================================
+# Replace with your PostgreSQL credentials
+spring.datasource.url=jdbc:postgresql://localhost:5432/user_service_db
+spring.datasource.username=YOUR_DB_USERNAME
+spring.datasource.password=YOUR_DB_PASSWORD
+spring.datasource.driver-class-name=org.postgresql.Driver
+
+# ====================================
+# JPA/Hibernate Configuration
+# ====================================
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+spring.jpa.open-in-view=false
+
+# ====================================
+# JWT Configuration
+# ====================================
+# IMPORTANT: Generate a secure random string (minimum 256 bits / 32 characters)
+# You can generate one using: openssl rand -base64 32
+application.security.jwt.secret-key=REPLACE_WITH_YOUR_SECRET_KEY_MIN_32_CHARS
+application.security.jwt.expiration=86400000
+
+# ====================================
+# Swagger/OpenAPI Configuration
+# ====================================
+springdoc.api-docs.path=/v3/api-docs
+springdoc.swagger-ui.path=/swagger-ui.html
+springdoc.swagger-ui.operationsSorter=method
+springdoc.swagger-ui.tagsSorter=alpha
+springdoc.swagger-ui.disable-swagger-default-url=true
+
+# ====================================
+# Logging
+# ====================================
+# Silence security warnings (optional)
+logging.level.org.springframework.security.config.annotation.authentication.configuration.InitializeUserDetailsBeanManagerConfigurer=ERROR
