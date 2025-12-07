@@ -1,9 +1,7 @@
 package com.senibo.userservice.service.impl;
 
-import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -31,7 +29,6 @@ public class AuthServiceImpl implements AuthService {
   private final UserRepository userRepository;
   private final JwtService jwtService;
   private final PasswordEncoder passwordEncoder;
-  private final AuthenticationManager authManager;
 
   /**
    * Registers a new user in the system.
@@ -65,11 +62,14 @@ public class AuthServiceImpl implements AuthService {
     // Persist user to database
     User createdUser = userRepository.save(newUser);
 
-    // Generate JWT token for immediate authentication
-    String token = jwtService.generateToken(createdUser);
+    // // Generate JWT token for immediate authentication
+    // String token = jwtService.generateToken(createdUser);
+
+    // Generate JWT token with userId as subject
+    String jwtToken = jwtService.generateTokenWithUserId(newUser.getId(), newUser.getUsername());
 
     // Return authentication response with token
-    return AuthResponse.of(token, createdUser);
+    return AuthResponse.of(jwtToken, createdUser);
   }
 
   /**
@@ -81,36 +81,25 @@ public class AuthServiceImpl implements AuthService {
    */
   @Override
   public AuthResponse login(LoginRequest request) {
-    // Authenticate user credentials using Spring Security's AuthenticationManager
-    var auth = authManager
-        .authenticate(new UsernamePasswordAuthenticationToken(request.identifier(), request.password()));
-
-    // Extract authenticated user from security context
-    var principal = (User) auth.getPrincipal();
+    // Load user details
+    User user = userRepository.findByEmailOrUsername(request.identifier(), request.identifier())
+        .orElseThrow(() -> new UsernameNotFoundException("User not found"));
 
     // TODO: Uncomment when Notification Service is ready
     // if (!principal.getIsEmailVerified()) {
     //     throw new UnverifiedException("Please verify your email before logging in");
     // }
 
-    // Generate JWT token for the authenticated user
-    var token = jwtService.generateToken(principal);
+    // // Generate JWT token for the authenticated user
+    // var token = jwtService.generateToken(principal);
 
-    // Extract user roles for logging
-    var roles = principal.getAuthorities().stream()
-        .map(GrantedAuthority::getAuthority)
-        .toList();
+    // Generate JWT token with userId as subject
+    String jwtToken = jwtService.generateTokenWithUserId(user.getId(), user.getUsername());
 
-    log.info("Login success user={} roles={}", principal.getUsername(), roles);
+    // // Extract user roles for logging
+    log.info("Login success user={} roles={}", user.getUsername(), user.getRole());
 
-    // Build and return authentication response
-    AuthResponse response = new AuthResponse(
-        token,
-        "Bearer",
-        principal.getUsername(),
-        principal.getEmail(),
-        roles.getFirst());
-
-    return response;
+    // Return authentication response
+    return AuthResponse.of(jwtToken, user);
   }
 }

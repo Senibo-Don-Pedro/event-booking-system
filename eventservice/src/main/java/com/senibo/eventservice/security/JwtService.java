@@ -1,4 +1,4 @@
-package com.senibo.userservice.security;
+package com.senibo.eventservice.security;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
@@ -12,10 +12,16 @@ import java.security.Key;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.UUID;
 import java.util.function.Function;
 
 import javax.crypto.SecretKey;
+
+// You can keep all the methods, but Event Service mainly needs:
+// - `extractUsername(String token)` - Get username from JWT
+// - `isTokenValid(String token, UserDetails userDetails)` - Validate JWT
+// - `extractClaim(String token, Function<Claims, T> claimsResolver)` - Extract any claim
+
+
 
 /**
  * Service for generating and validating JWT (JSON Web Tokens).
@@ -77,26 +83,6 @@ public class JwtService {
         .issuedAt(new Date(System.currentTimeMillis())) // Token creation time
         .expiration(new Date(System.currentTimeMillis() + jwtExpiration)) // Token expiry time
         .signWith(getSignInKey()) // Sign with secret key
-        .compact();
-  }
-
-  /**
-  * Generates a JWT token with userId as subject.
-  * 
-  * @param userId User's UUID
-  * @param username User's username (stored as claim)
-  * @return Generated JWT token
-  */
-  public String generateTokenWithUserId(UUID userId, String username) {
-    Map<String, Object> claims = new HashMap<>();
-    claims.put("username", username); // Store username as a claim
-
-    return Jwts.builder()
-        .claims(claims)
-        .subject(userId.toString()) // ✅ Store userId as subject
-        .issuedAt(new Date(System.currentTimeMillis()))
-        .expiration(new Date(System.currentTimeMillis() + jwtExpiration))
-        .signWith(getSignInKey())
         .compact();
   }
 
