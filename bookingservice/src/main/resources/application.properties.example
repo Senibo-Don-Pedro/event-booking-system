@@ -1,0 +1,44 @@
+# ============================================
+# SERVER CONFIGURATION
+# ============================================
+spring.application.name=booking-service
+server.port=8083
+
+# ============================================
+# DATABASE CONFIGURATION
+# ============================================
+spring.datasource.url=jdbc:postgresql://localhost:5432/booking_service_db
+spring.datasource.username=postgres
+spring.datasource.password=YOUR_PASSWORD_HERE
+spring.datasource.driver-class-name=org.postgresql.Driver
+
+# ============================================
+# JPA/HIBERNATE CONFIGURATION
+# ============================================
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
+
+# ============================================
+# JWT CONFIGURATION (MUST MATCH USER SERVICE!)
+# ============================================
+jwt.secret=COPY_FROM_USER_SERVICE
+jwt.expiration=86400000
+
+# ============================================
+# OPENFEIGN CONFIGURATION
+# ============================================
+event.service.url=http://localhost:8081
+logging.level.com.senibo.bookingservice.client=DEBUG
+feign.client.config.default.connectTimeout=5000
+feign.client.config.default.readTimeout=5000
+# Enable Apache HttpClient for Feign (supports PATCH)
+spring.cloud.openfeign.httpclient.hc5.enabled=true
+
+# ============================================
+# SWAGGER/OPENAPI CONFIGURATION
+# ============================================
+springdoc.api-docs.path=/api-docs
+springdoc.swagger-ui.path=/swagger-ui.html
+springdoc.swagger-ui.operationsSorter=method

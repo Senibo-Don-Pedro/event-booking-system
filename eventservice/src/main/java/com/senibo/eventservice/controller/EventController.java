@@ -93,6 +93,17 @@ public class EventController {
     return ApiSuccessResponse.of(updatedEvent, "Event updated successfully");
   }
 
+  @PatchMapping("/{eventId}/tickets")
+  @Operation(summary = "Update available tickets", description = "Update event available tickets (JWT required)")
+  public ApiSuccessResponse<EventResponse> updateAvailableTickets(
+      @Parameter(description = "Event ID", required = true) @PathVariable UUID eventId,
+      @Valid @RequestBody UpdateTicketsRequest ticketsToBook) {
+
+    EventResponse updatedEvent = eventService.updateAvailableTickets(eventId, ticketsToBook);
+
+    return ApiSuccessResponse.of(updatedEvent, "Tickets updated successfully");
+  }
+
   @DeleteMapping("/{eventId}")
   @ResponseStatus(HttpStatus.NO_CONTENT)
   @Operation(summary = "Delete event", description = "Soft delete event by changing status to CANCELLED (owner only - JWT required)")

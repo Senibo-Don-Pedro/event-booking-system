@@ -7,6 +7,7 @@ import com.senibo.eventservice.dto.EventResponse;
 import com.senibo.eventservice.dto.EventSearchRequest;
 import com.senibo.eventservice.dto.PagedResponse;
 import com.senibo.eventservice.dto.UpdateEventRequest;
+import com.senibo.eventservice.dto.UpdateTicketsRequest;
 import com.senibo.eventservice.enums.EventStatus;
 
 /**
@@ -48,6 +49,16 @@ public interface EventService {
    * @throws UnauthorizedException if organizer doesn't own the event
    */
   EventResponse updateEvent(UUID eventId, UpdateEventRequest request, UUID organizerId);
+
+  /**
+   * Update he available tickets for the event
+   * @param eventId ID of the event to update
+   * @param ticketsToBook
+   * @param organizerId
+   * @return
+   */
+  EventResponse updateAvailableTickets(UUID eventId, UpdateTicketsRequest ticketsToBook);
+
 
   /**
    * Delete (cancel) an event.
@@ -103,4 +114,7 @@ public interface EventService {
    * @throws UnauthorizedException if organizer doesn't own the event
    */
   EventResponse updateEventStatus(UUID eventId, EventStatus newStatus, UUID organizerId);
+
+
+  
 }

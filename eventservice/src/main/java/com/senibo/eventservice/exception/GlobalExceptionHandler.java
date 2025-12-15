@@ -133,6 +133,22 @@ public class GlobalExceptionHandler {
   }
 
   /**
+  * Handles insufficient ticket operations.
+  * Returns 422 UNPROCESSABLE ENTITY status when subtracting more tickets than available.
+  */
+  @ExceptionHandler(InsufficientTicketsException.class)
+  @ResponseStatus(HttpStatus.UNPROCESSABLE_ENTITY)
+  public ResponseEntity<ApiErrorResponse> handleInsufficientTicketsException(
+      InsufficientTicketsException ex,
+      WebRequest request) {
+
+    log.warn("Insufficient tickets error: {}", ex.getMessage());
+
+    ApiErrorResponse error = ApiErrorResponse.of(ex.getMessage());
+    return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(error);
+  }
+
+  /**
    * Handles all other unhandled exceptions.
    * Returns 500 INTERNAL SERVER ERROR status.
    */

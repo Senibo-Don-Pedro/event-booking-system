@@ -16,8 +16,10 @@ import com.senibo.eventservice.dto.EventResponse;
 import com.senibo.eventservice.dto.EventSearchRequest;
 import com.senibo.eventservice.dto.PagedResponse;
 import com.senibo.eventservice.dto.UpdateEventRequest;
+import com.senibo.eventservice.dto.UpdateTicketsRequest;
 import com.senibo.eventservice.entity.Event;
 import com.senibo.eventservice.enums.EventStatus;
+import com.senibo.eventservice.exception.InsufficientTicketsException;
 import com.senibo.eventservice.exception.NotFoundException;
 import com.senibo.eventservice.exception.UnauthorizedException;
 import com.senibo.eventservice.exception.ValidationException;
@@ -171,6 +173,39 @@ public class EventServiceImpl implements EventService {
   }
 
   @Override
+  public EventResponse updateAvailableTickets(UUID eventId, UpdateTicketsRequest ticketsToBook) {
+    Event event = eventRepository.findById(eventId)
+        .orElseThrow(() -> new NotFoundException("Event not found"));
+
+    // Calculate new ticket count
+    Integer ticketsChange = ticketsToBook.ticketsToBook();
+    Integer newAvailableTickets = event.getAvailableTickets() - ticketsChange;
+
+    // Validate result is not negative
+    if (newAvailableTickets < 0) {
+      if (ticketsChange > 0) {
+        // Booking attempt
+        throw new InsufficientTicketsException(
+            String.format("Cannot book %d tickets. Only %d available.",
+                ticketsChange, event.getAvailableTickets()));
+      } else {
+        // Should never happen for returns, but just in case
+        throw new InsufficientTicketsException("Invalid ticket update operation");
+      }
+    }
+
+    // Validate not exceeding total capacity when returning tickets
+    if (newAvailableTickets > event.getCapacity()) {
+      throw new InsufficientTicketsException("Cannot return more tickets than total capacity");
+    }
+
+    // Update
+    event.setAvailableTickets(newAvailableTickets);
+    Event updatedEvent = eventRepository.save(event);
+    return EventResponse.from(updatedEvent);
+  }
+
+  @Override
   public void deleteEvent(UUID eventId, UUID organizerId) {
     // 1. Find event
     Event event = eventRepository.findById(eventId)
@@ -215,7 +250,6 @@ public class EventServiceImpl implements EventService {
     // 4. Convert and wrap
     Page<EventResponse> responsePage = eventPage.map(EventResponse::from);
 
-    
     return PagedResponse.of(responsePage);
   }
 
