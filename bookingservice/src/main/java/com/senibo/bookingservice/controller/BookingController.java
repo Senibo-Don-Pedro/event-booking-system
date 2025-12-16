@@ -61,13 +61,12 @@ public class BookingController {
   @PostMapping
   @ResponseStatus(HttpStatus.CREATED)
   public ApiSuccessResponse<BookingResponse> createBooking(
-      @Valid @RequestBody CreateBookingRequest request,
-      @RequestHeader("Authorization") String authHeader) {
+      @Valid @RequestBody CreateBookingRequest request
+      ) {
 
     UUID userId = getAuthenticatedUserId(); // ← Easy!
-    String jwtToken = authHeader; // For passing to Event Service
 
-    BookingResponse booking = bookingService.createBooking(request, userId, jwtToken);
+    BookingResponse booking = bookingService.createBooking(request, userId);
 
     return ApiSuccessResponse.of(booking, "Booking created successfully");
   }
@@ -96,12 +95,11 @@ public class BookingController {
 
   @DeleteMapping("/{bookingId}")
   public ApiSuccessResponse<String> deleteBooking(
-      @Parameter(description = "Booking ID", required = true) @PathVariable UUID bookingId,
-      @RequestHeader("Authorization") String authHeader
+      @Parameter(description = "Booking ID", required = true) @PathVariable UUID bookingId
     ) {
     UUID userId = getAuthenticatedUserId(); // ✅ Get from JWT
 
-    bookingService.deleteBooking(bookingId, userId, authHeader);
+    bookingService.deleteBooking(bookingId, userId);
 
     String message = "Booking cancelled successfully";
 

@@ -3,6 +3,7 @@ package com.senibo.bookingservice.service.impl;
 import java.math.BigDecimal;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -12,12 +13,16 @@ import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 
 import com.senibo.bookingservice.client.EventServiceClient;
+import com.senibo.bookingservice.client.UserServiceClient;
 import com.senibo.bookingservice.dto.ApiSuccessResponse;
 import com.senibo.bookingservice.dto.BookingResponse;
 import com.senibo.bookingservice.dto.CreateBookingRequest;
 import com.senibo.bookingservice.dto.PagedResponse;
 import com.senibo.bookingservice.dto.clientDTOs.EventResponse;
 import com.senibo.bookingservice.dto.clientDTOs.UpdateTicketsRequest;
+import com.senibo.bookingservice.dto.clientDTOs.UserResponse;
+import com.senibo.bookingservice.dto.kafka.BookingCancelledEvent;
+import com.senibo.bookingservice.dto.kafka.BookingConfirmedEvent;
 import com.senibo.bookingservice.entity.Booking;
 import com.senibo.bookingservice.enums.BookingStatus;
 import com.senibo.bookingservice.enums.EventStatus;
@@ -28,6 +33,7 @@ import com.senibo.bookingservice.exception.NotFoundException;
 import com.senibo.bookingservice.exception.UnauthorizedException;
 import com.senibo.bookingservice.repository.BookingRepository;
 import com.senibo.bookingservice.service.BookingService;
+import com.senibo.bookingservice.service.KafkaProducerService;
 
 import feign.FeignException;
 import jakarta.transaction.Transactional;
@@ -43,37 +49,65 @@ public class BookingServiceImpl implements BookingService {
 
     private final EventServiceClient eventServiceClient;
     private final BookingRepository bookingRepository;
+    private final UserServiceClient userServiceClient;
+    private final KafkaProducerService kafkaProducerService;
+
+    @Value("${app.internal-service-key}")
+    private String internalServiceKey; // Inject the secret
 
     @Override
     @Transactional
     @Retryable(retryFor = OptimisticLockingFailureException.class, maxAttempts = 3)
-    public BookingResponse createBooking(CreateBookingRequest request, UUID userId, String jwtToken) {
-        // 1. Validate inputs
-        validateInputs(request, userId, jwtToken);
+    public BookingResponse createBooking(CreateBookingRequest request, UUID userId) {
+        // Validate inputs
+        validateInputs(request, userId);
 
-        // 2. Fetch and validate event
+        // Fetch and validate event
         EventResponse event = fetchAndValidateEvent(request);
 
-        // 3. Validate booking against event
+        //  Validate booking against event
         validateBookingAgainstEvent(request, event);
 
-        // 4. Create and save booking entity
+        //  Create and save booking entity
         Booking booking = createBookingEntity(request, userId, event);
 
         try {
-            // 5. Update event service tickets
-            updateEventTickets(request, jwtToken, event);
+            //  Update event service tickets
+            updateEventTickets(request, event);
 
-            // 6. Confirm booking
+            //  Confirm booking
             confirmBooking(booking);
+
+            //Get User Id from User service
+            UserResponse user = getUserDetails(userId);
+
+            //Get email from the user response
+            String userEmail = user.email();
+
+            //Build Booking confirmed event to publish to Kafka
+            BookingConfirmedEvent bookingConfirmedEvent = new BookingConfirmedEvent(
+                    booking.getId(),
+                    booking.getUserId(),
+                    userEmail,
+                    event.title(),
+                    booking.getNumberOfTickets(),
+                    booking.getTotalPrice(),
+                    booking.getBookingReference(),
+                    event.startDateTime());
+
+            //Publish Booking confirmed event to Kafka
+            kafkaProducerService.publishBookingConfirmedEvent(bookingConfirmedEvent);
 
             log.info("Booking created successfully: bookingReference={}, eventId={}, userId={}",
                     booking.getBookingReference(), request.eventId(), userId);
 
         } catch (FeignException e) {
-            // 7. Handle event service failure
+            // Handle event service failure
             handleEventServiceFailure(booking, e);
             throw new BookingException("Failed to reserve tickets. Please try again.");
+        } catch (Exception e) {
+            log.error("Unexpected error during booking creation for bookingReference={}: ",
+                    booking.getBookingReference(), e);
         }
 
         return BookingResponse.from(booking);
@@ -110,7 +144,7 @@ public class BookingServiceImpl implements BookingService {
 
     @Override
     @Transactional
-    public void deleteBooking(UUID bookingId, UUID userId, String authHeader) {
+    public void deleteBooking(UUID bookingId, UUID userId) {
         //Check if booking exists
         Booking booking = bookingRepository.findById(bookingId).orElseThrow(
                 () -> new NotFoundException("Booking Not Found"));
@@ -129,9 +163,31 @@ public class BookingServiceImpl implements BookingService {
 
         bookingRepository.save(booking);
 
+        //Get event details
+        ApiSuccessResponse<EventResponse> eventResponse = eventServiceClient.getEvent(booking.getEventId());
+
+        EventResponse event = eventResponse.data();
+
+        //Get User details
+        UserResponse user = getUserDetails(userId);
+
+        // Build Event: Instantiate BookingCancelledEvent
+        BookingCancelledEvent bookingCancelledEvent = new BookingCancelledEvent(
+                booking.getId(),
+                booking.getUserId(),
+                user.email(),
+                event.title(),
+                booking.getNumberOfTickets(),
+                booking.getTotalPrice(),
+                booking.getBookingReference(),
+                event.startDateTime());
+
+        // Publish to Kafka
+        kafkaProducerService.publishBookingCancelledEvent(bookingCancelledEvent);
+
         // ✅ NEW: Return tickets to Event Service
         try {
-            returnTicketsToEvent(booking, authHeader);
+            returnTicketsToEvent(booking);
             log.info("Tickets returned to event: bookingId={}, eventId={}, tickets={}",
                     bookingId, booking.getEventId(), booking.getNumberOfTickets());
         } catch (FeignException e) {
@@ -146,13 +202,9 @@ public class BookingServiceImpl implements BookingService {
     // ==============================
     // HELPER METHODS
     // ==============================
-    private void validateInputs(CreateBookingRequest request, UUID userId, String jwtToken) {
+    private void validateInputs(CreateBookingRequest request, UUID userId) {
         if (userId == null) {
             throw new BookingException("User ID cannot be null");
-        }
-
-        if (jwtToken == null || jwtToken.isBlank()) {
-            throw new BookingException("JWT token is required");
         }
 
         if (request.numberOfTickets() <= 0) {
@@ -248,14 +300,14 @@ public class BookingServiceImpl implements BookingService {
                 MAX_BOOKING_REFERENCE_ATTEMPTS + " attempts");
     }
 
-    private void updateEventTickets(CreateBookingRequest request, String jwtToken, EventResponse event) {
+    private void updateEventTickets(CreateBookingRequest request, EventResponse event) {
         UpdateTicketsRequest updateRequest = new UpdateTicketsRequest(request.numberOfTickets());
 
         try {
             eventServiceClient.updateAvailableTickets(
                     request.eventId(),
                     updateRequest,
-                    jwtToken);
+                    internalServiceKey);
 
             log.debug("Successfully updated tickets for eventId: {}", request.eventId());
 
@@ -265,7 +317,7 @@ public class BookingServiceImpl implements BookingService {
         }
     }
 
-    private void returnTicketsToEvent(Booking booking, String jwtToken) {
+    private void returnTicketsToEvent(Booking booking) {
         // Create request to INCREASE tickets (negative number)
         UpdateTicketsRequest updateRequest = new UpdateTicketsRequest(
                 -booking.getNumberOfTickets() // ← Negative to ADD tickets back
@@ -276,7 +328,7 @@ public class BookingServiceImpl implements BookingService {
         eventServiceClient.updateAvailableTickets(
                 booking.getEventId(),
                 updateRequest,
-                jwtToken);
+                internalServiceKey);
     }
 
     private void confirmBooking(Booking booking) {
@@ -290,5 +342,15 @@ public class BookingServiceImpl implements BookingService {
 
         log.error("Event service call failed for booking: {}. Marked as FAILED.",
                 booking.getBookingReference(), e);
+    }
+
+    private UserResponse getUserDetails(UUID userId) {
+        try {
+            ApiSuccessResponse<UserResponse> userResponse = userServiceClient.getUserById(userId);
+            return userResponse.data();
+        } catch (FeignException e) {
+            log.error("Failed to fetch user details for userId: {}", userId, e);
+            throw new BookingException("Failed to fetch user details. Please try again.");
+        }
     }
 }

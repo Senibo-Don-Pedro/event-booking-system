@@ -7,6 +7,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
+import java.util.UUID;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -24,13 +26,13 @@ public class AuthController {
 
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED) // For Swagger documentation
-    public ResponseEntity<ApiSuccessResponse<AuthResponse>> register(
+    public ResponseEntity<ApiSuccessResponse<String>> register(
             @Valid @RequestBody RegisterRequest request) {
 
-        AuthResponse response = authService.register(request);
+        String response = authService.register(request);
 
         return ResponseEntity.status(HttpStatus.CREATED) // ✅ Actually returns 201
-                .body(ApiSuccessResponse.of(response, "User registered successfully"));
+                .body(ApiSuccessResponse.of(null, response));
     }
 
     @PostMapping("/login")
@@ -41,5 +43,23 @@ public class AuthController {
         AuthResponse response = authService.login(request);
 
         return ResponseEntity.ok(ApiSuccessResponse.of(response, "Login successful"));
+    }
+
+    @GetMapping("/verify")
+    public ResponseEntity<ApiSuccessResponse<AuthResponse>> verifyEmail(
+            @RequestParam String token) {
+
+        AuthResponse response = authService.verifyEmail(token);
+
+        return ResponseEntity.ok(ApiSuccessResponse.of(response, "Email verified successfully"));
+    }
+
+    @GetMapping("/{userId}")
+    public ResponseEntity<ApiSuccessResponse<UserResponse>> getUserById(
+            @PathVariable UUID userId) {
+
+        UserResponse response = authService.getUserById(userId);
+
+        return ResponseEntity.ok(ApiSuccessResponse.of(response, "User retrieved successfully"));
     }
 }

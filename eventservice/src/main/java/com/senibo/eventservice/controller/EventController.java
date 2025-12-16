@@ -3,6 +3,7 @@ package com.senibo.eventservice.controller;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -29,6 +30,9 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 @Tag(name = "Event Management", description = "APIs for managing events")
 public class EventController {
+
+  @Value("${app.internal-service-key}")
+  private String internalServiceKey;
 
   private final EventService eventService;
 
@@ -97,7 +101,13 @@ public class EventController {
   @Operation(summary = "Update available tickets", description = "Update event available tickets (JWT required)")
   public ApiSuccessResponse<EventResponse> updateAvailableTickets(
       @Parameter(description = "Event ID", required = true) @PathVariable UUID eventId,
-      @Valid @RequestBody UpdateTicketsRequest ticketsToBook) {
+      @Valid @RequestBody UpdateTicketsRequest ticketsToBook,
+      @RequestHeader(value = "x-internal-secret", required = true) String secret) {
+
+    // 🔒 SECURITY CHECK: If keys don't match, block the request
+    if (!internalServiceKey.equals(secret)) {
+      throw new UnauthorizedException("Access Denied: Only Internal Services can perform this action.");
+    }
 
     EventResponse updatedEvent = eventService.updateAvailableTickets(eventId, ticketsToBook);
 

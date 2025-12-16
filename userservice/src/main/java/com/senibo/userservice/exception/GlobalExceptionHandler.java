@@ -34,7 +34,7 @@ public class GlobalExceptionHandler {
       NotFoundException ex,
       WebRequest request) {
     log.error("Resource not found: {}", ex.getMessage());
-    
+
     ApiErrorResponse error = ApiErrorResponse.of(ex.getMessage());
     return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
   }
@@ -49,7 +49,7 @@ public class GlobalExceptionHandler {
       AlreadyExistsException ex,
       WebRequest request) {
     log.error("Resource already exists: {}", ex.getMessage());
-    
+
     ApiErrorResponse error = ApiErrorResponse.of(ex.getMessage());
     return ResponseEntity.status(HttpStatus.CONFLICT).body(error);
   }
@@ -63,7 +63,7 @@ public class GlobalExceptionHandler {
   public ResponseEntity<ApiErrorResponse> handleValidationExceptions(
       MethodArgumentNotValidException ex) {
     log.error("Validation failed: {}", ex.getMessage());
-    
+
     // Extract field error messages
     List<String> errors = ex.getBindingResult()
         .getAllErrors()
@@ -83,15 +83,31 @@ public class GlobalExceptionHandler {
    * Handles authentication failures (invalid credentials).
    * Returns 401 UNAUTHORIZED status.
    */
-  @ExceptionHandler({BadCredentialsException.class, UsernameNotFoundException.class})
+  @ExceptionHandler({ BadCredentialsException.class, UsernameNotFoundException.class })
   @ResponseStatus(HttpStatus.UNAUTHORIZED)
   public ResponseEntity<ApiErrorResponse> handleAuthenticationException(
       Exception ex,
       WebRequest request) {
     log.error("Authentication failed: {}", ex.getMessage());
-    
+
     ApiErrorResponse error = ApiErrorResponse.of("Invalid email or password");
     return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
+  }
+
+  /**
+  * Handles unverified account exceptions.
+  * Returns 403 FORBIDDEN status.
+  */
+  @ExceptionHandler(UnverifiedException.class)
+  @ResponseStatus(HttpStatus.FORBIDDEN)
+  public ResponseEntity<ApiErrorResponse> handleUnverifiedException(
+      UnverifiedException ex,
+      WebRequest request) {
+
+    log.warn("Unverified account access attempt: {}", ex.getMessage());
+
+    ApiErrorResponse error = ApiErrorResponse.of(ex.getMessage());
+    return ResponseEntity.status(HttpStatus.FORBIDDEN).body(error);
   }
 
   /**
@@ -104,7 +120,7 @@ public class GlobalExceptionHandler {
       Exception ex,
       WebRequest request) {
     log.error("Unexpected error occurred: ", ex);
-    
+
     ApiErrorResponse error = ApiErrorResponse.of("An unexpected error occurred. Please try again later.");
     return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
   }

@@ -72,6 +72,7 @@ public class User implements UserDetails {
   @Column(nullable = false) // Good practice to make it non-nullable
   private LocalDateTime updatedAt;
 
+  // Verification information
   @Column(nullable = false)
   @Builder.Default
   private Boolean isEmailVerified = false;

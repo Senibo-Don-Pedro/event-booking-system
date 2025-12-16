@@ -12,7 +12,6 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-
 import com.senibo.eventservice.dto.ApiErrorResponse;
 import com.senibo.eventservice.security.AuthTokenFilter;
 
@@ -33,22 +32,23 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(csrf -> csrf.disable())  // Disable CSRF for stateless API
+                .csrf(csrf -> csrf.disable()) // Disable CSRF for stateless API
                 .sessionManagement(session -> session
-                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS))  // No sessions
+                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS)) // No sessions
                 .authorizeHttpRequests(auth -> auth
                         // Public endpoints
-                        .requestMatchers("/v3/api-docs/**","/swagger", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        .requestMatchers("/v3/api-docs/**", "/swagger", "/swagger-ui/**", "/swagger-ui.html")
+                        .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/events/published").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/events/search").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/events/{id}").permitAll()
-                        
+                        // ✅ ADD THIS LINE: Allow PATCH /tickets without JWT
+                        .requestMatchers(HttpMethod.PATCH, "/api/events/*/tickets").permitAll()
+
                         // All other endpoints require authentication
-                        .anyRequest().authenticated()
-                )
+                        .anyRequest().authenticated())
                 .exceptionHandling(exception -> exception
-                        .authenticationEntryPoint(customAuthenticationEntryPoint()) 
-                )
+                        .authenticationEntryPoint(customAuthenticationEntryPoint()))
                 .addFilterBefore(authTokenFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
@@ -63,11 +63,10 @@ public class SecurityConfig {
         return (request, response, authException) -> {
             response.setStatus(HttpStatus.UNAUTHORIZED.value());
             response.setContentType("application/json");
-            
+
             ApiErrorResponse errorResponse = ApiErrorResponse.of(
-                "Authentication required. Please provide a valid JWT token in the Authorization header."
-            );
-            
+                    "Authentication required. Please provide a valid JWT token in the Authorization header.");
+
             response.getWriter().write(objectMapper.writeValueAsString(errorResponse));
         };
     }

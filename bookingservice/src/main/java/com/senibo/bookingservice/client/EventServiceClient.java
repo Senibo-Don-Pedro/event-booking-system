@@ -21,10 +21,12 @@ public interface EventServiceClient {
   ApiSuccessResponse<EventResponse> getEvent(@PathVariable UUID eventId);
 
   // Method 2: Update tickets (JWT required)
+  // ✅ Change 1: Remove @RequestHeader("Authorization")
+  // ✅ Change 2: Add @RequestHeader("x-internal-secret")
   @PatchMapping("/api/events/{eventId}/tickets")
   ApiSuccessResponse<EventResponse> updateAvailableTickets(
       @PathVariable UUID eventId,
       @RequestBody UpdateTicketsRequest request,
-      @RequestHeader("Authorization") String authorization);
+      @RequestHeader("x-internal-secret") String internalSecret);
 
 }

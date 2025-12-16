@@ -48,3 +48,11 @@ springdoc.swagger-ui.disable-swagger-default-url=true
 # ====================================
 # Silence security warnings (optional)
 logging.level.org.springframework.security.config.annotation.authentication.configuration.InitializeUserDetailsBeanManagerConfigurer=ERROR
+
+# Kafka Configuration
+spring.kafka.bootstrap-servers: localhost:9092
+spring.kafka.producer.key-serializer: org.apache.kafka.common.serialization.StringSerializer
+spring.kafka.producer.value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+# A shared secret password only your microservices know
+app.internal-service-key=EXAMPLE_VALUED
