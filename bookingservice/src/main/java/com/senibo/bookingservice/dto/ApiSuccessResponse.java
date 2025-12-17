@@ -10,7 +10,7 @@ public record ApiSuccessResponse<T>(
     @Schema(description = "Indicates success", example = "true")
     boolean success,
     
-    @Schema(description = "Success message", example = "User registered successfully")
+    @Schema(description = "Success message", example = "Booking Created Successfully")
     String message,
     
     @Schema(description = "Timestamp of the response", example = "2024-12-06T10:30:00")

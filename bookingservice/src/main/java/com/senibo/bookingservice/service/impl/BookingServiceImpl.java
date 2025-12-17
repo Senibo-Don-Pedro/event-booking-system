@@ -53,60 +53,56 @@ public class BookingServiceImpl implements BookingService {
     private final KafkaProducerService kafkaProducerService;
 
     @Value("${app.internal-service-key}")
-    private String internalServiceKey; // Inject the secret
+    private String internalServiceKey;
 
     @Override
     @Transactional
     @Retryable(retryFor = OptimisticLockingFailureException.class, maxAttempts = 3)
     public BookingResponse createBooking(CreateBookingRequest request, UUID userId) {
-        // Validate inputs
+        // --- STEP 1: VALIDATION (Read Only) ---
         validateInputs(request, userId);
-
-        // Fetch and validate event
         EventResponse event = fetchAndValidateEvent(request);
-
-        //  Validate booking against event
         validateBookingAgainstEvent(request, event);
 
-        //  Create and save booking entity
+        // --- STEP 2: INVENTORY RESERVATION (Critical - External Call) ---
+        // We do this BEFORE saving to our DB. If this fails, the method exits,
+        // nothing is saved, and we don't need manual rollbacks.
+        try {
+            updateEventTickets(request, event);
+        } catch (FeignException e) {
+            log.error("Failed to reserve tickets for event: {}", request.eventId(), e);
+            throw new BookingException("Failed to reserve tickets. Please try again.");
+        }
+
+        // --- STEP 3: PERSISTENCE (Critical - Database) ---
+        // Inventory is reserved, so we save the booking as CONFIRMED immediately.
         Booking booking = createBookingEntity(request, userId, event);
 
+        // --- STEP 4: NOTIFICATIONS (Non-Critical / Best Effort) ---
+        // We wrap this in a separate try-catch so it DOES NOT rollback the transaction.
+        // If the email server fails, the user still has a valid booking.
         try {
-            //  Update event service tickets
-            updateEventTickets(request, event);
-
-            //  Confirm booking
-            confirmBooking(booking);
-
-            //Get User Id from User service
+            // Fetch User Email (Token Relay handles authentication)
             UserResponse user = getUserDetails(userId);
 
-            //Get email from the user response
-            String userEmail = user.email();
-
-            //Build Booking confirmed event to publish to Kafka
             BookingConfirmedEvent bookingConfirmedEvent = new BookingConfirmedEvent(
                     booking.getId(),
                     booking.getUserId(),
-                    userEmail,
+                    user.email(),
                     event.title(),
                     booking.getNumberOfTickets(),
                     booking.getTotalPrice(),
                     booking.getBookingReference(),
                     event.startDateTime());
 
-            //Publish Booking confirmed event to Kafka
             kafkaProducerService.publishBookingConfirmedEvent(bookingConfirmedEvent);
 
-            log.info("Booking created successfully: bookingReference={}, eventId={}, userId={}",
-                    booking.getBookingReference(), request.eventId(), userId);
+            log.info("Booking created and notification sent: bookingReference={}, userId={}",
+                    booking.getBookingReference(), userId);
 
-        } catch (FeignException e) {
-            // Handle event service failure
-            handleEventServiceFailure(booking, e);
-            throw new BookingException("Failed to reserve tickets. Please try again.");
         } catch (Exception e) {
-            log.error("Unexpected error during booking creation for bookingReference={}: ",
+            // Log and swallow exception. Do NOT fail the booking.
+            log.error("Booking confirmed but failed to send notification for bookingRef: {}",
                     booking.getBookingReference(), e);
         }
 
@@ -115,103 +111,87 @@ public class BookingServiceImpl implements BookingService {
 
     @Override
     public PagedResponse<BookingResponse> getMyBookings(UUID userId, int page, int pageSize) {
-        // Create Pageable object
         Pageable pageable = PageRequest.of(page, pageSize, Sort.by("createdAt").descending());
-
-        // Query with specification and pagination
         Page<Booking> bookingsPage = bookingRepository.findByUserId(userId, pageable);
-
-        // Convert entities to DTOs
-        Page<BookingResponse> responsePage = bookingsPage.map(BookingResponse::from);
-
-        return PagedResponse.of(responsePage);
+        return PagedResponse.of(bookingsPage.map(BookingResponse::from));
     }
 
     @Override
     public BookingResponse getBookingById(UUID bookingId, UUID userId) {
-        //Check if booking exists
         Booking booking = bookingRepository.findById(bookingId).orElseThrow(
                 () -> new NotFoundException("Booking Not Found"));
 
-        //Check if booking belongs to the user
         if (!booking.getUserId().equals(userId)) {
             throw new UnauthorizedException("You are not authorized to view this booking");
         }
 
-        //Return booking after passing the checks
         return BookingResponse.from(booking);
     }
 
     @Override
     @Transactional
     public void deleteBooking(UUID bookingId, UUID userId) {
-        //Check if booking exists
         Booking booking = bookingRepository.findById(bookingId).orElseThrow(
                 () -> new NotFoundException("Booking Not Found"));
 
-        //Check if booking belongs to the user
         if (!booking.getUserId().equals(userId)) {
-            throw new UnauthorizedException("You are not authorized to view this booking");
+            throw new UnauthorizedException("You are not authorized to modify this booking");
         }
 
         if (booking.getStatus() != BookingStatus.CONFIRMED) {
             throw new BookingException("This booking cannot be cancelled");
         }
 
-        //Cancel Booking
+        // 1. Cancel in DB
         booking.setStatus(BookingStatus.CANCELLED);
-
         bookingRepository.save(booking);
 
-        //Get event details
-        ApiSuccessResponse<EventResponse> eventResponse = eventServiceClient.getEvent(booking.getEventId());
-
-        EventResponse event = eventResponse.data();
-
-        //Get User details
-        UserResponse user = getUserDetails(userId);
-
-        // Build Event: Instantiate BookingCancelledEvent
-        BookingCancelledEvent bookingCancelledEvent = new BookingCancelledEvent(
-                booking.getId(),
-                booking.getUserId(),
-                user.email(),
-                event.title(),
-                booking.getNumberOfTickets(),
-                booking.getTotalPrice(),
-                booking.getBookingReference(),
-                event.startDateTime());
-
-        // Publish to Kafka
-        kafkaProducerService.publishBookingCancelledEvent(bookingCancelledEvent);
-
-        // ✅ NEW: Return tickets to Event Service
+        // 2. Return Tickets (Best Effort - Log on failure)
         try {
             returnTicketsToEvent(booking);
             log.info("Tickets returned to event: bookingId={}, eventId={}, tickets={}",
                     bookingId, booking.getEventId(), booking.getNumberOfTickets());
         } catch (FeignException e) {
-            // Log error but don't fail the cancellation
             log.error("Failed to return tickets to event service: bookingId={}", bookingId, e);
-            // Booking is still cancelled, but tickets weren't returned
-            // This is acceptable - better to let user cancel than block them
+            // We still proceed with cancellation because the user shouldn't be blocked
         }
 
+        // 3. Send Notification (Best Effort)
+        try {
+            // We need event details for the email title/date
+            EventResponse event = fetchEventDetailsSafe(booking.getEventId());
+            UserResponse user = getUserDetails(userId);
+
+            if (event != null && user != null) {
+                BookingCancelledEvent bookingCancelledEvent = new BookingCancelledEvent(
+                        booking.getId(),
+                        booking.getUserId(),
+                        user.email(),
+                        event.title(),
+                        booking.getNumberOfTickets(),
+                        booking.getTotalPrice(),
+                        booking.getBookingReference(),
+                        event.startDateTime());
+
+                kafkaProducerService.publishBookingCancelledEvent(bookingCancelledEvent);
+            }
+        } catch (Exception e) {
+            log.error("Booking cancelled but failed to send notification for bookingRef: {}",
+                    booking.getBookingReference(), e);
+        }
     }
 
     // ==============================
     // HELPER METHODS
     // ==============================
+
     private void validateInputs(CreateBookingRequest request, UUID userId) {
         if (userId == null) {
             throw new BookingException("User ID cannot be null");
         }
-
         if (request.numberOfTickets() <= 0) {
             throw new BookingException("Number of tickets must be positive");
         }
-
-        // Optional: Add max tickets per booking limit
         if (request.numberOfTickets() > 10) {
             throw new BookingException("Cannot book more than 10 tickets in a single booking");
         }
@@ -225,9 +205,7 @@ public class BookingServiceImpl implements BookingService {
             if (event == null) {
                 throw new BookingException("Event not found with id: " + request.eventId());
             }
-
             return event;
-
         } catch (FeignException.NotFound e) {
             throw new BookingException("Event not found with id: " + request.eventId());
         } catch (FeignException e) {
@@ -236,15 +214,24 @@ public class BookingServiceImpl implements BookingService {
         }
     }
 
+    // A safe version of event fetching that doesn't throw exceptions (used in cancellation)
+    private EventResponse fetchEventDetailsSafe(UUID eventId) {
+        try {
+            ApiSuccessResponse<EventResponse> eventResponse = eventServiceClient.getEvent(eventId);
+            return eventResponse.data();
+        } catch (Exception e) {
+            log.error("Could not fetch event details for notification. eventId={}", eventId, e);
+            return null; // Return null so we skip the specific email fields
+        }
+    }
+
     private void validateBookingAgainstEvent(CreateBookingRequest request, EventResponse event) {
-        // Check event status first (fail fast)
         if (event.status() != EventStatus.PUBLISHED) {
             throw new EventNotPublishedException(
                     String.format("Event '%s' is not published. Current status: %s",
                             event.title(), event.status()));
         }
 
-        // Check ticket availability
         if (event.availableTickets() <= 0) {
             throw new InsufficientTicketsException("Event is sold out");
         }
@@ -255,8 +242,7 @@ public class BookingServiceImpl implements BookingService {
                             event.availableTickets(), request.numberOfTickets()));
         }
 
-        // Validate event price
-        if (event.price() == null || event.price().compareTo(BigDecimal.ZERO) <= 0) {
+        if (event.price() == null || event.price().compareTo(BigDecimal.ZERO) < 0) {
             throw new BookingException("Event price is invalid");
         }
     }
@@ -265,12 +251,13 @@ public class BookingServiceImpl implements BookingService {
         BigDecimal totalPrice = calculateTotalPrice(request, event);
         String bookingReference = generateUniqueBookingReference();
 
+        // Optimized: Save directly as CONFIRMED since we already reserved tickets
         Booking booking = Booking.builder()
                 .userId(userId)
                 .eventId(request.eventId())
                 .numberOfTickets(request.numberOfTickets())
                 .totalPrice(totalPrice)
-                .status(BookingStatus.PENDING)
+                .status(BookingStatus.CONFIRMED) 
                 .bookingReference(bookingReference)
                 .build();
 
@@ -283,7 +270,6 @@ public class BookingServiceImpl implements BookingService {
 
     private String generateUniqueBookingReference() {
         int attempts = 0;
-
         while (attempts < MAX_BOOKING_REFERENCE_ATTEMPTS) {
             String shortUUID = UUID.randomUUID().toString().split("-")[0];
             String bookingReference = "BOOK-" + shortUUID.toUpperCase();
@@ -291,66 +277,30 @@ public class BookingServiceImpl implements BookingService {
             if (!bookingRepository.existsByBookingReference(bookingReference)) {
                 return bookingReference;
             }
-
             attempts++;
-            log.warn("Booking reference collision detected. Attempt: {}", attempts);
         }
-
-        throw new BookingException("Failed to generate unique booking reference after " +
-                MAX_BOOKING_REFERENCE_ATTEMPTS + " attempts");
+        throw new BookingException("Failed to generate unique booking reference");
     }
 
     private void updateEventTickets(CreateBookingRequest request, EventResponse event) {
         UpdateTicketsRequest updateRequest = new UpdateTicketsRequest(request.numberOfTickets());
-
-        try {
-            eventServiceClient.updateAvailableTickets(
-                    request.eventId(),
-                    updateRequest,
-                    internalServiceKey);
-
-            log.debug("Successfully updated tickets for eventId: {}", request.eventId());
-
-        } catch (FeignException e) {
-            log.error("Failed to update tickets for eventId: {}", request.eventId(), e);
-            throw e; // Re-throw to be handled by the caller
-        }
+        eventServiceClient.updateAvailableTickets(
+                request.eventId(),
+                updateRequest,
+                internalServiceKey);
     }
 
     private void returnTicketsToEvent(Booking booking) {
-        // Create request to INCREASE tickets (negative number)
-        UpdateTicketsRequest updateRequest = new UpdateTicketsRequest(
-                -booking.getNumberOfTickets() // ← Negative to ADD tickets back
-        );
-
-        // Call Event Service
-        // Note: This requires updating Event Service to accept negative numbers!
+        // Negative number adds tickets back
+        UpdateTicketsRequest updateRequest = new UpdateTicketsRequest(-booking.getNumberOfTickets());
         eventServiceClient.updateAvailableTickets(
                 booking.getEventId(),
                 updateRequest,
                 internalServiceKey);
     }
 
-    private void confirmBooking(Booking booking) {
-        booking.setStatus(BookingStatus.CONFIRMED);
-        bookingRepository.save(booking);
-    }
-
-    private void handleEventServiceFailure(Booking booking, FeignException e) {
-        booking.setStatus(BookingStatus.FAILED);
-        bookingRepository.save(booking);
-
-        log.error("Event service call failed for booking: {}. Marked as FAILED.",
-                booking.getBookingReference(), e);
-    }
-
     private UserResponse getUserDetails(UUID userId) {
-        try {
-            ApiSuccessResponse<UserResponse> userResponse = userServiceClient.getUserById(userId);
-            return userResponse.data();
-        } catch (FeignException e) {
-            log.error("Failed to fetch user details for userId: {}", userId, e);
-            throw new BookingException("Failed to fetch user details. Please try again.");
-        }
+        ApiSuccessResponse<UserResponse> userResponse = userServiceClient.getUserById(userId);
+        return userResponse.data();
     }
 }
