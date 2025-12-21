@@ -1,0 +1,96 @@
+spring.application.name=apigateway
+server.port=8080
+
+# --- Service URLs ---
+# We define these as variables so we can easily change them later (e.g., for Docker)
+user.service.url=http://localhost:8084
+event.service.url=http://localhost:8081
+booking.service.url=http://localhost:8083
+
+# --- JWT Configuration ---
+# MUST match the User Service secret exactly!
+spring.app.jwtSecret=YOUR_LONG_SECRET_KEY_FROM_USER_SERVICE_MUST_MATCH
+spring.app.jwtExpirationMs=86400000
+
+# --- Routes Configuration ---
+
+# 1. User Service Route
+# Matches: /api/auth/login, /api/auth/register, /api/users/{id}
+spring.cloud.gateway.routes[0].id=user-service
+spring.cloud.gateway.routes[0].uri=${user.service.url}
+spring.cloud.gateway.routes[0].predicates[0]=Path=/api/auth/**, /api/users/**
+spring.cloud.gateway.routes[0].filters[0]=AuthenticationFilter
+
+# 2. Event Service Route
+# Matches: /api/events, /api/events/published
+spring.cloud.gateway.routes[1].id=event-service
+spring.cloud.gateway.routes[1].uri=${event.service.url}
+spring.cloud.gateway.routes[1].predicates[0]=Path=/api/events/**
+spring.cloud.gateway.routes[1].filters[0]=AuthenticationFilter
+
+# 3. Booking Service Route
+# Matches: /api/bookings, /api/bookings/{id}
+spring.cloud.gateway.routes[2].id=booking-service
+spring.cloud.gateway.routes[2].uri=${booking.service.url}
+spring.cloud.gateway.routes[2].predicates[0]=Path=/api/bookings/**
+spring.cloud.gateway.routes[2].filters[0]=AuthenticationFilter
+
+# --- Swagger Internal Routes (The "Pipes" for the Documentation) ---
+
+# 4. User Service Docs (Route 3)
+spring.cloud.gateway.server.webflux.routes[3].id=user-service-docs
+spring.cloud.gateway.server.webflux.routes[3].uri=${user.service.url}
+spring.cloud.gateway.server.webflux.routes[3].predicates[0]=Path=/v3/api-docs/user-service
+# This RewritePath is CRITICAL. It changes the request from ".../user-service" to just "/v3/api-docs" 
+# so the backend service understands it.
+spring.cloud.gateway.server.webflux.routes[3].filters[0]=RewritePath=/v3/api-docs/user-service, /v3/api-docs
+
+# 5. Event Service Docs (Route 4)
+spring.cloud.gateway.server.webflux.routes[4].id=event-service-docs
+spring.cloud.gateway.server.webflux.routes[4].uri=${event.service.url}
+spring.cloud.gateway.server.webflux.routes[4].predicates[0]=Path=/v3/api-docs/event-service
+spring.cloud.gateway.server.webflux.routes[4].filters[0]=RewritePath=/v3/api-docs/event-service, /v3/api-docs
+
+# 6. Booking Service Docs (Route 5)
+spring.cloud.gateway.server.webflux.routes[5].id=booking-service-docs
+spring.cloud.gateway.server.webflux.routes[5].uri=${booking.service.url}
+spring.cloud.gateway.server.webflux.routes[5].predicates[0]=Path=/v3/api-docs/booking-service
+spring.cloud.gateway.server.webflux.routes[5].filters[0]=RewritePath=/v3/api-docs/booking-service, /v3/api-docs
+
+spring.cloud.config.enabled=false
+
+# --- Logging ---
+logging.level.org.springframework.cloud.gateway=DEBUG
+logging.level.reactor.netty.http.client=DEBUG
+
+# --- Global CORS Configuration ---
+# Allow requests from any origin (for development)
+spring.cloud.gateway.globalcors.cors-configurations.[/**].allowedOrigins=*
+# Allow all standard HTTP methods
+spring.cloud.gateway.globalcors.cors-configurations.[/**].allowedMethods=GET,POST,PUT,DELETE,OPTIONS
+# Allow all headers (Content-Type, Authorization, etc.)
+spring.cloud.gateway.globalcors.cors-configurations.[/**].allowedHeaders=*
+# Allow credentials (cookies/auth headers) - Note: If you use '*', you might need to set this to false depending on browser strictness, 
+# but for simple JWT headers, strictly speaking 'allowedOrigins=*' usually conflicts with 'allowCredentials=true' in newer browsers.
+# For a "works everywhere" dev setup, try specific origin or turn off credentials if just using headers.
+# Let's use the robust dev setup:
+spring.cloud.gateway.globalcors.cors-configurations.[/**].allowCredentials=false
+
+
+# --- Swagger Aggregation Config ---
+springdoc.swagger-ui.path=/swagger-ui.html
+springdoc.api-docs.path=/v3/api-docs
+springdoc.show-actuator=true
+
+# Define the "Groups" (Dropdown Menu Items)
+# Group 1: User Service
+springdoc.swagger-ui.urls[0].name=User Service
+springdoc.swagger-ui.urls[0].url=/v3/api-docs/user-service
+
+# Group 2: Event Service
+springdoc.swagger-ui.urls[1].name=Event Service
+springdoc.swagger-ui.urls[1].url=/v3/api-docs/event-service
+
+# Group 3: Booking Service
+springdoc.swagger-ui.urls[2].name=Booking Service
+springdoc.swagger-ui.urls[2].url=/v3/api-docs/booking-service
