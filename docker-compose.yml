@@ -1,0 +1,126 @@
+services:
+  # --- Infrastructure ---
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - event-net
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - event-net
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: root       # <--- Changed to root
+      POSTGRES_PASSWORD: root   # <--- Changed to root
+      POSTGRES_DB: event_db     # One DB to rule them all (Saves RAM)
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - event-net
+
+  # --- Microservices ---
+  userservice:
+    build: ./userservice
+    container_name: userservice
+    ports:
+      - "8084:8084"
+    environment:
+      # OVERRIDES application.properties automatically!
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/event_db
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: root
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    depends_on:
+      - postgres
+      - kafka
+    networks:
+      - event-net
+
+  eventservice:
+    build: ./eventservice
+    container_name: eventservice
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/event_db
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: root
+    depends_on:
+      - postgres
+    networks:
+      - event-net
+
+  bookingservice:
+    build: ./bookingservice
+    container_name: bookingservice
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/event_db
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: root
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      # Docker Networking Magic: We use the container name 'eventservice' as the hostname
+      EVENT_SERVICE_URL: http://eventservice:8081
+      USER_SERVICE_URL: http://userservice:8084
+    depends_on:
+      - postgres
+      - kafka
+      - userservice
+      - eventservice
+    networks:
+      - event-net
+
+  notificationservice:
+    build: ./notificationservice
+    container_name: notificationservice
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    depends_on:
+      - kafka
+    networks:
+      - event-net
+
+  apigateway:
+    build: ./apigateway
+    container_name: apigateway
+    ports:
+      - "8080:8080"
+    environment:
+      USER_SERVICE_URL: http://userservice:8084
+      EVENT_SERVICE_URL: http://eventservice:8081
+      BOOKING_SERVICE_URL: http://bookingservice:8083
+    depends_on:
+      - userservice
+      - eventservice
+      - bookingservice
+    networks:
+      - event-net
+
+networks:
+  event-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
