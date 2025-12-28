@@ -110,7 +110,12 @@ All requests should be sent to the **Gateway** (`http://localhost:8080`).
 * `GET /api/bookings/my-bookings` - View user's booking history
 * `DELETE /api/bookings/{id}` - Cancel a booking
 
----
+## 📧 Email Testing (MailHog)
+This project uses **MailHog** to capture emails during development. You don't need a real Gmail account.
+
+1. Perform an action that triggers an email (e.g., Register a user).
+2. Open the MailHog Dashboard: [http://localhost:8025](http://localhost:8025)
+3. You will see the email appear in the inbox instantly.
 
 ## ⚠️ Troubleshooting
 

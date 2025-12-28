@@ -20,20 +20,34 @@ public class BookingEventConsumer {
     @KafkaHandler
     public void handleBookingConfirmedEvent(BookingConfirmedEvent event) {
         log.info("Received BookingConfirmedEvent for bookingId: {}", event.bookingId());
-        emailService.sendBookingConfirmationEmail(
-            event.email(), 
-            "Valued Customer", // Ideally you'd fetch the name or add it to the event
-            event
-        );
+
+        try {
+            emailService.sendBookingConfirmationEmail(
+                    event.email(),
+                    "Valued Customer", // Ideally you'd fetch the name or add it to the event
+                    event);
+            log.info("✅ Booking confirmation email sent successfully to: {}", event.email());
+        } catch (Exception e) {
+            log.error("❌ FAILED to send booking confirmation email to: {}", event.email(), e);
+            throw e; // Re-throw so Kafka knows it failed
+        }
+
     }
 
     @KafkaHandler
     public void handleBookingCancelledEvent(BookingCancelledEvent event) {
         log.info("Received BookingCancelledEvent for bookingId: {}", event.bookingId());
-        emailService.sendBookingCancellationEmail(
-            event.email(), 
-            "Valued Customer", 
-            event
-        );
+
+        try {
+            emailService.sendBookingCancellationEmail(
+                    event.email(),
+                    "Valued Customer",
+                    event);
+            log.info("✅ Booking cancellation email sent successfully to: {}", event.email());
+        } catch (Exception e) {
+            log.error("❌ FAILED to send booking cancellation email to: {}", event.email(), e);
+            throw e; // Re-throw so Kafka knows it failed
+        }
+
     }
 }

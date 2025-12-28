@@ -21,15 +21,29 @@ public class UserEventConsumer {
   @KafkaHandler
   public void handleUserRegisteredEvent(UserRegisteredEvent event) {
     log.info("Received UserRegisteredEvent for email: {}", event.email());
-    emailService.sendVerificationEmail(
-        event.email(),
-        event.username(),
-        event.verificationToken());
+    try {
+      emailService.sendVerificationEmail(
+          event.email(),
+          event.username(),
+          event.verificationToken());
+      log.info("✅ Verification email sent successfully to: {}", event.email());
+    } catch (Exception e) {
+      log.error("❌ FAILED to send verification email to: {}", event.email(), e);
+      throw e; // Re-throw so Kafka knows it failed
+    }
   }
 
   @KafkaHandler
   public void handleEmailVerifiedEvent(EmailVerifiedEvent event) {
     log.info("Received EmailVerifiedEvent for email: {}", event.email());
-    emailService.sendWelcomeEmail(event.email(), event.username());
+
+    try {
+      emailService.sendWelcomeEmail(event.email(), event.username());
+      log.info("✅ Welcome email sent successfully to: {}", event.email());
+    } catch (Exception e) {
+      log.error("❌ FAILED to send welcome email to: {}", event.email(), e);
+      throw e; // Re-throw so Kafka knows it failed
+    }
+    
   }
 }

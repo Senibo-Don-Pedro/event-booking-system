@@ -26,12 +26,22 @@ services:
     networks:
       - event-net
 
+   # ✅ ADD THIS NEW SERVICE
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: mailhog
+    ports:
+      - "1025:1025"  # SMTP port (services send to this)
+      - "8025:8025"  # Web UI (you view emails here)
+    networks:
+      - event-net
+
   postgres:
     image: postgres:15
     environment:
-      POSTGRES_USER: root       # <--- Changed to root
-      POSTGRES_PASSWORD: root   # <--- Changed to root
-      POSTGRES_DB: event_db     # One DB to rule them all (Saves RAM)
+      POSTGRES_USER: root # <--- Changed to root
+      POSTGRES_PASSWORD: root # <--- Changed to root
+      POSTGRES_DB: event_db # One DB to rule them all (Saves RAM)
     ports:
       - "5432:5432"
     volumes:
@@ -97,8 +107,19 @@ services:
     container_name: notificationservice
     environment:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      # ✅ CHANGE THESE LINES TO USE MAILHOG
+      SPRING_MAIL_HOST: mailhog
+      SPRING_MAIL_PORT: 1025
+      # ✅ REMOVE USERNAME/PASSWORD (not needed for MailHog)
+      # SPRING_MAIL_USERNAME: senibodonpedro@gmail.com
+      SPRING_MAIL_USERNAME: noreply@seniboevents.com
+      # SPRING_MAIL_PASSWORD: fake_app_password
+      # ✅ DISABLE AUTH (MailHog doesn't need it)
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH: false
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE: false
     depends_on:
       - kafka
+      - mailhog
     networks:
       - event-net
 

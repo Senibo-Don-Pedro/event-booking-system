@@ -36,7 +36,7 @@ springdoc.swagger-ui.disable-swagger-default-url=true
 # ====================================
 # JWT Configuration (SAME as User Service!)
 # ====================================
-spring.app.jwtSecret=rpegmtpmmpmgmgmlpglmpgrmpgrgmprgmprgmp
+spring.app.jwtSecret=COPY_FROM_USER_SERVICE
 # 24 Hours
 spring.app.jwtExpirationMs=86400000
 
