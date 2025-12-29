@@ -42,3 +42,9 @@ spring.app.jwtExpirationMs=86400000
 
 # A shared secret password only your microservices know
 app.internal-service-key=SecureServicePassword_12345!
+
+# --- Actuator & Metrics Config ---
+# Expose the endpoints so Prometheus can read them
+management.endpoints.web.exposure.include=health,metrics,prometheus
+management.endpoint.health.show-details=always
+management.metrics.tags.application=${spring.application.name}

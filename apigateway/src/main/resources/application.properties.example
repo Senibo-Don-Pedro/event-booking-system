@@ -76,3 +76,9 @@ springdoc.swagger-ui.urls[1].url=/v3/api-docs/event-service
 
 springdoc.swagger-ui.urls[2].name=Booking Service
 springdoc.swagger-ui.urls[2].url=/v3/api-docs/booking-service
+
+# --- Actuator & Metrics Config ---
+# Expose the endpoints so Prometheus can read them
+management.endpoints.web.exposure.include=health,metrics,prometheus
+management.endpoint.health.show-details=always
+management.metrics.tags.application=${spring.application.name}

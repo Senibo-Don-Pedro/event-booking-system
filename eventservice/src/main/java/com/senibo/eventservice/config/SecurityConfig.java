@@ -44,7 +44,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/events/{id}").permitAll()
                         // ✅ ADD THIS LINE: Allow PATCH /tickets without JWT
                         .requestMatchers(HttpMethod.PATCH, "/api/events/*/tickets").permitAll()
-
+                        .requestMatchers("/actuator/**").permitAll()
                         // All other endpoints require authentication
                         .anyRequest().authenticated())
                 .exceptionHandling(exception -> exception

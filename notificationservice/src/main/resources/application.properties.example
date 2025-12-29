@@ -14,3 +14,9 @@ com.senibo.userservice.dto.UserRegisteredEvent:com.senibo.notificationservice.ev
 com.senibo.userservice.dto.EmailVerifiedEvent:com.senibo.notificationservice.event.EmailVerifiedEvent,\
 com.senibo.bookingservice.dto.kafka.BookingConfirmedEvent:com.senibo.notificationservice.event.BookingConfirmedEvent,\
 com.senibo.bookingservice.dto.kafka.BookingCancelledEvent:com.senibo.notificationservice.event.BookingCancelledEvent
+
+# --- Actuator & Metrics Config ---
+# Expose the endpoints so Prometheus can read them
+management.endpoints.web.exposure.include=health,metrics,prometheus
+management.endpoint.health.show-details=always
+management.metrics.tags.application=${spring.application.name}

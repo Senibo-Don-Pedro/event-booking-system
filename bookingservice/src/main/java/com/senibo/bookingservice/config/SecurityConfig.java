@@ -37,7 +37,8 @@ public class SecurityConfig {
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))  // No sessions
                 .authorizeHttpRequests(auth -> auth
                         // Public endpoints
-                        .requestMatchers("/v3/api-docs/**","/swagger", "/swagger-ui/**", "/swagger-ui.html").permitAll()                        
+                        .requestMatchers("/v3/api-docs/**","/swagger", "/swagger-ui/**", "/swagger-ui.html").permitAll()          
+                        .requestMatchers("/actuator/**").permitAll()              
                         // All other endpoints require authentication
                         .anyRequest().authenticated()
                 )

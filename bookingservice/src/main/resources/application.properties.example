@@ -50,3 +50,9 @@ app.internal-service-key=SecureServicePassword_12345!
 spring.kafka.bootstrap-servers: localhost:9092
 spring.kafka.producer.key-serializer: org.apache.kafka.common.serialization.StringSerializer
 spring.kafka.producer.value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+# --- Actuator & Metrics Config ---
+# Expose the endpoints so Prometheus can read them
+management.endpoints.web.exposure.include=health,metrics,prometheus
+management.endpoint.health.show-details=always
+management.metrics.tags.application=${spring.application.name}

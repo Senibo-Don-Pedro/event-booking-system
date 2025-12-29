@@ -26,13 +26,13 @@ services:
     networks:
       - event-net
 
-   # ✅ ADD THIS NEW SERVICE
+    # ✅ ADD THIS NEW SERVICE
   mailhog:
     image: mailhog/mailhog:latest
     container_name: mailhog
     ports:
-      - "1025:1025"  # SMTP port (services send to this)
-      - "8025:8025"  # Web UI (you view emails here)
+      - "1025:1025" # SMTP port (services send to this)
+      - "8025:8025" # Web UI (you view emails here)
     networks:
       - event-net
 
@@ -46,6 +46,30 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - event-net
+
+  # --- Observability ---
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - event-net
+
+  grafana:
+    image: grafana/grafana:10.0.3
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=password
+    depends_on:
+      - prometheus
     networks:
       - event-net
 

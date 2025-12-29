@@ -46,6 +46,7 @@ public class SecurityConfig {
         .authorizeHttpRequests(auth -> auth
             .requestMatchers("/api/auth/**").permitAll()
             .requestMatchers("/api/users/{userId}").permitAll()
+            .requestMatchers("/actuator/**").permitAll()
             // Allow Swagger UI access
             .requestMatchers("/swagger","/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll()
             .anyRequest().authenticated())
